@@ -462,7 +462,9 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     layout["footer"].update(Panel(stats_table, border_style="grey50"))
 
 
-def get_user_selections():
+def get_user_selections(
+    preset_ticker: Optional[str] = None,
+):
     """Get all user selections before starting the analysis display."""
     # Display ASCII art welcome message
     with open(Path(__file__).parent / "static" / "welcome.txt", "r", encoding="utf-8") as f:
@@ -502,29 +504,120 @@ def get_user_selections():
         return Panel(box_content, border_style="blue", padding=(1, 2))
 
     # Step 1: Ticker symbol
-    console.print(
-        create_question_box(
-            "Step 1: Ticker Symbol",
-            "Enter the exact ticker symbol to analyze, including exchange suffix when needed (examples: SPY, CNC.TO, 7203.T, 0700.HK)",
-            "SPY",
+    if preset_ticker:
+        selected_ticker = preset_ticker.strip().upper()
+    else:
+        console.print(
+            create_question_box(
+                "Step 1: Ticker Symbol",
+                "Enter the exact ticker symbol to analyze, including exchange suffix when needed (examples: SPY, CNC.TO, 7203.T, 0700.HK)",
+                "SPY",
+            )
         )
-    )
-    selected_ticker = get_ticker()
+        selected_ticker = get_ticker()
     asset_type = detect_asset_type(selected_ticker)
     console.print(
         f"[green]Detected asset type:[/green] {asset_type.value}"
     )
 
     # Step 2: Analysis date
-    default_date = datetime.datetime.now().strftime("%Y-%m-%d")
-    console.print(
-        create_question_box(
-            "Step 2: Analysis Date",
-            "Enter the analysis date (YYYY-MM-DD)",
-            default_date,
+    if preset_ticker:
+        analysis_date = datetime.datetime.now().strftime("%Y-%m-%d")
+    else:
+        default_date = datetime.datetime.now().strftime("%Y-%m-%d")
+        console.print(
+            create_question_box(
+                "Step 2: Analysis Date",
+                "Enter the analysis date (YYYY-MM-DD)",
+                default_date,
+            )
         )
-    )
-    analysis_date = get_analysis_date()
+        analysis_date = get_analysis_date()
+
+    # Step 2.5: Ask configuration mode: Load from Environment (.env) vs Custom Settings
+    if preset_ticker:
+        config_mode = "env"
+    else:
+        console.print(
+            create_question_box(
+                "Configuration Mode",
+                "Choose whether to load settings from environment variables (.env) or configure them step-by-step",
+                "Load from Environment (.env / Default)"
+            )
+        )
+        config_mode = questionary.select(
+            "Select Configuration Mode:",
+            choices=[
+                questionary.Choice("Load from Environment (.env / Default)", "env"),
+                questionary.Choice("Custom Configuration (Interactive)", "custom"),
+            ],
+            style=questionary.Style([
+                ("selected", "fg:yellow noinherit"),
+                ("highlighted", "fg:yellow noinherit"),
+                ("pointer", "fg:yellow noinherit"),
+            ]),
+        ).ask()
+
+    if config_mode is None:
+        console.print("\n[red]No configuration mode selected. Exiting...[/red]")
+        raise typer.Exit(1)
+
+    if config_mode == "env":
+        # Load directly from DEFAULT_CONFIG and environment overrides
+        provider = DEFAULT_CONFIG.get("llm_provider", "openai").lower()
+        shallow_thinker = DEFAULT_CONFIG.get("quick_think_llm", "gpt-5.4-mini")
+        deep_thinker = DEFAULT_CONFIG.get("deep_think_llm", "gpt-5.4")
+        backend_url = DEFAULT_CONFIG.get("backend_url")
+        
+        # Default backend URLs for regions if not set
+        if not backend_url:
+            if provider == "openai":
+                backend_url = "https://api.openai.com/v1"
+            elif provider == "anthropic":
+                backend_url = "https://api.anthropic.com/"
+            elif provider == "xai":
+                backend_url = "https://api.x.ai/v1"
+            elif provider == "deepseek":
+                backend_url = "https://api.deepseek.com"
+            elif provider == "qwen":
+                backend_url = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+            elif provider == "qwen-cn":
+                backend_url = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+            elif provider == "glm":
+                backend_url = "https://api.z.ai/api/paas/v4/"
+            elif provider == "glm-cn":
+                backend_url = "https://open.bigmodel.cn/api/paas/v4/"
+            elif provider == "minimax":
+                backend_url = "https://api.minimax.io/v1"
+            elif provider == "minimax-cn":
+                backend_url = "https://api.minimaxi.com/v1"
+            elif provider == "openrouter":
+                backend_url = "https://openrouter.ai/api/v1"
+        
+        # Default thinking modes
+        thinking_level = DEFAULT_CONFIG.get("google_thinking_level")
+        reasoning_effort = DEFAULT_CONFIG.get("openai_reasoning_effort")
+        anthropic_effort = DEFAULT_CONFIG.get("anthropic_effort")
+        
+        # Filter analysts for asset type
+        all_analysts = [AnalystType.MARKET, AnalystType.SOCIAL, AnalystType.NEWS, AnalystType.FUNDAMENTALS]
+        selected_analysts = filter_analysts_for_asset_type(all_analysts, asset_type)
+        
+        return {
+            "ticker": selected_ticker,
+            "asset_type": asset_type.value,
+            "analysis_date": analysis_date,
+            "analysts": selected_analysts,
+            "research_depth": DEFAULT_CONFIG.get("max_debate_rounds", 1),
+            "llm_provider": provider,
+            "backend_url": backend_url,
+            "shallow_thinker": shallow_thinker,
+            "deep_thinker": deep_thinker,
+            "google_thinking_level": thinking_level,
+            "openai_reasoning_effort": reasoning_effort,
+            "anthropic_effort": anthropic_effort,
+            "output_language": DEFAULT_CONFIG.get("output_language", "English"),
+        }
 
     # Step 3: Output language
     console.print(
@@ -637,6 +730,7 @@ def get_user_selections():
         "anthropic_effort": anthropic_effort,
         "output_language": output_language,
     }
+
 
 
 def get_ticker():
@@ -974,9 +1068,14 @@ def format_tool_args(args, max_length=80) -> str:
         return result[:max_length - 3] + "..."
     return result
 
-def run_analysis(checkpoint: bool = False):
+def run_analysis(
+    checkpoint: bool = False,
+    preset_ticker: Optional[str] = None,
+):
     # First get all user selections
-    selections = get_user_selections()
+    selections = get_user_selections(
+        preset_ticker=preset_ticker,
+    )
 
     # Create config with selected research depth
     config = DEFAULT_CONFIG.copy()
@@ -1241,15 +1340,18 @@ def run_analysis(checkpoint: bool = False):
     console.print(f"[dim]{analyst_wall_time_tracker.format_summary()}[/dim]")
 
     # Prompt to save report
-    save_choice = typer.prompt("Save report?", default="Y").strip().upper()
+    save_choice = "Y" if preset_ticker else typer.prompt("Save report?", default="Y").strip().upper()
     if save_choice in ("Y", "YES", ""):
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         default_path = Path.cwd() / "reports" / f"{selections['ticker']}_{timestamp}"
-        save_path_str = typer.prompt(
-            "Save path (press Enter for default)",
-            default=str(default_path)
-        ).strip()
-        save_path = Path(save_path_str)
+        if preset_ticker:
+            save_path = default_path
+        else:
+            save_path_str = typer.prompt(
+                "Save path (press Enter for default)",
+                default=str(default_path)
+            ).strip()
+            save_path = Path(save_path_str)
         try:
             report_file = save_report_to_disk(final_state, selections["ticker"], save_path)
             console.print(f"\n[green]✓ Report saved to:[/green] {save_path.resolve()}")
@@ -1258,9 +1360,16 @@ def run_analysis(checkpoint: bool = False):
             console.print(f"[red]Error saving report: {e}[/red]")
 
     # Prompt to display full report
-    display_choice = typer.prompt("\nDisplay full report on screen?", default="Y").strip().upper()
-    if display_choice in ("Y", "YES", ""):
-        display_complete_report(final_state)
+    if not preset_ticker:
+        display_choice = typer.prompt("\nDisplay full report on screen?", default="Y").strip().upper()
+        if display_choice in ("Y", "YES", ""):
+            display_complete_report(final_state)
+
+
+@app.callback()
+def callback():
+    """TradingAgents CLI: Multi-Agents LLM Financial Trading Framework"""
+    pass
 
 
 @app.command()
@@ -1275,12 +1384,21 @@ def analyze(
         "--clear-checkpoints",
         help="Delete all saved checkpoints before running (force fresh start).",
     ),
+    ticker: Optional[str] = typer.Option(
+        None,
+        "--ticker",
+        "-t",
+        help="Ticker symbol to analyze (e.g. SPY, AAPL, 1810.HK).",
+    ),
 ):
     if clear_checkpoints:
         from tradingagents.graph.checkpointer import clear_all_checkpoints
         n = clear_all_checkpoints(DEFAULT_CONFIG["data_cache_dir"])
         console.print(f"[yellow]Cleared {n} checkpoint(s).[/yellow]")
-    run_analysis(checkpoint=checkpoint)
+    run_analysis(
+        checkpoint=checkpoint,
+        preset_ticker=ticker,
+    )
 
 
 if __name__ == "__main__":
