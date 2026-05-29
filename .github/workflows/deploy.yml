@@ -16,8 +16,8 @@ jobs:
       - name: Executing remote ssh commands using password
         uses: appleboy/ssh-action@master
         with:
-          host: ${{ secrets.IP }}
-          username: ${{ secrets.USERNAME }}
+          host: 47.93.153.109
+          username: pengbo
           key: ${{ secrets.ID_RSA }}
           port: 2222
           script: |
