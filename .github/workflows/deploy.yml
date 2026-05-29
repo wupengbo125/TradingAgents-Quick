@@ -1,0 +1,39 @@
+name: Deploy to Server
+
+on:
+  push:
+    branches:
+      - main  # 如果你的主分支叫 master，请改为 master
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: hasee
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Executing remote ssh commands using password
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.IP }}
+          username: ${{ secrets.USERNAME }}
+          key: ${{ secrets.ID_RSA }}
+          port: 2222
+          script: |
+            # 进入项目目录（请根据你服务器的实际路径修改）
+            cd ~/home/github/TradingAgents-Quick
+            
+            # 强制同步为远端最新代码（覆盖本地修改，删除未追踪文件）
+            git fetch --all
+            git reset --hard origin/main
+            git clean -fd
+            
+            # 给予 setup_cron.sh 执行权限
+            chmod +x setup_cron.sh
+            
+            # 执行同步任务
+            ./setup_cron.sh
+
+            # print time
+            date > ~/action_time.log
