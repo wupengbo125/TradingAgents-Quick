@@ -1103,11 +1103,11 @@ def run_analysis(
     # If user did custom re-configure, ask to save settings now (before analysis starts)
     if selections.get("config_mode") == "custom":
         console.print()
-        save_env_choice = typer.prompt(
+        save_confirmed = questionary.confirm(
             "Save this configuration as new defaults to .env?",
-            default="N"
-        ).strip().upper()
-        if save_env_choice in ("Y", "YES"):
+            default=False,
+        ).ask()
+        if save_confirmed:
             updates = {
                 "TRADINGAGENTS_LLM_PROVIDER": selections["llm_provider"],
                 "TRADINGAGENTS_DEEP_THINK_LLM": selections["deep_thinker"],
