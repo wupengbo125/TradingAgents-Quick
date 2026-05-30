@@ -1100,6 +1100,31 @@ def run_analysis(
         preset_ticker=preset_ticker,
     )
 
+    # If user did custom re-configure, ask to save settings now (before analysis starts)
+    if selections.get("config_mode") == "custom":
+        console.print()
+        save_env_choice = typer.prompt(
+            "Save this configuration as new defaults to .env?",
+            default="N"
+        ).strip().upper()
+        if save_env_choice in ("Y", "YES"):
+            updates = {
+                "TRADINGAGENTS_LLM_PROVIDER": selections["llm_provider"],
+                "TRADINGAGENTS_DEEP_THINK_LLM": selections["deep_thinker"],
+                "TRADINGAGENTS_QUICK_THINK_LLM": selections["shallow_thinker"],
+                "TRADINGAGENTS_OUTPUT_LANGUAGE": selections.get("output_language", "English"),
+                "TRADINGAGENTS_MAX_DEBATE_ROUNDS": str(selections["research_depth"]),
+                "TRADINGAGENTS_MAX_RISK_ROUNDS": str(selections["research_depth"]),
+            }
+            if selections.get("backend_url"):
+                updates["TRADINGAGENTS_LLM_BACKEND_URL"] = selections["backend_url"]
+            try:
+                save_to_dotenv(updates)
+                console.print("[green]✓ Configuration saved to .env[/green]")
+            except Exception as e:
+                console.print(f"[red]Failed to save to .env: {e}[/red]")
+        console.print()
+
     # Create config with selected research depth
     config = DEFAULT_CONFIG.copy()
     config["max_debate_rounds"] = selections["research_depth"]
@@ -1388,29 +1413,7 @@ def run_analysis(
         if display_choice in ("Y", "YES", ""):
             display_complete_report(final_state)
 
-    # If user did custom re-configure, offer to save settings as new defaults
-    if selections.get("config_mode") == "custom":
-        console.print()
-        save_env_choice = typer.prompt(
-            "Save this configuration as new defaults to .env?",
-            default="N"
-        ).strip().upper()
-        if save_env_choice in ("Y", "YES"):
-            updates = {
-                "TRADINGAGENTS_LLM_PROVIDER": selections["llm_provider"],
-                "TRADINGAGENTS_DEEP_THINK_LLM": selections["deep_thinker"],
-                "TRADINGAGENTS_QUICK_THINK_LLM": selections["shallow_thinker"],
-                "TRADINGAGENTS_OUTPUT_LANGUAGE": selections.get("output_language", "English"),
-                "TRADINGAGENTS_MAX_DEBATE_ROUNDS": str(selections["research_depth"]),
-                "TRADINGAGENTS_MAX_RISK_ROUNDS": str(selections["research_depth"]),
-            }
-            if selections.get("backend_url"):
-                updates["TRADINGAGENTS_LLM_BACKEND_URL"] = selections["backend_url"]
-            try:
-                save_to_dotenv(updates)
-                console.print("[green]✓ Configuration saved to .env[/green]")
-            except Exception as e:
-                console.print(f"[red]Failed to save to .env: {e}[/red]")
+
 
 
 @app.callback()
