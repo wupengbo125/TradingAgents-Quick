@@ -462,6 +462,30 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
     layout["footer"].update(Panel(stats_table, border_style="grey50"))
 
 
+def save_to_dotenv(updates: dict) -> None:
+    """Write key=value pairs to the project .env file.
+    Existing keys are overwritten in-place; new keys are appended.
+    Comments and other lines are preserved.
+    """
+    env_path = Path(__file__).parent.parent / ".env"
+    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
+    updated_keys: set = set()
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            key = stripped.split("=", 1)[0].strip()
+            if key in updates:
+                new_lines.append(f"{key}={updates[key]}")
+                updated_keys.add(key)
+                continue
+        new_lines.append(line)
+    for key, val in updates.items():
+        if key not in updated_keys:
+            new_lines.append(f"{key}={val}")
+    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+
+
 def get_user_selections(
     preset_ticker: Optional[str] = None,
 ):
@@ -534,29 +558,26 @@ def get_user_selections(
         )
         analysis_date = get_analysis_date()
 
-    # Step 2.5: Ask configuration mode: Load from Environment (.env) vs Custom Settings
-    if preset_ticker:
-        config_mode = "env"
-    else:
-        console.print(
-            create_question_box(
-                "Configuration Mode",
-                "Choose whether to load settings from environment variables (.env) or configure them step-by-step",
-                "Load from Environment (.env / Default)"
-            )
+    # Configuration Mode: always ask, regardless of preset_ticker
+    console.print(
+        create_question_box(
+            "Configuration Mode",
+            "Choose whether to load settings from environment variables (.env) or configure them step-by-step",
+            "Load from Environment (.env / Default)"
         )
-        config_mode = questionary.select(
-            "Select Configuration Mode:",
-            choices=[
-                questionary.Choice("Load from Environment (.env / Default)", "env"),
-                questionary.Choice("Custom Configuration (Interactive)", "custom"),
-            ],
-            style=questionary.Style([
-                ("selected", "fg:yellow noinherit"),
-                ("highlighted", "fg:yellow noinherit"),
-                ("pointer", "fg:yellow noinherit"),
-            ]),
-        ).ask()
+    )
+    config_mode = questionary.select(
+        "Select Configuration Mode:",
+        choices=[
+            questionary.Choice("Use defaults (load from .env)", "env"),
+            questionary.Choice("Re-configure (step-by-step, can save to .env after)", "custom"),
+        ],
+        style=questionary.Style([
+            ("selected", "fg:yellow noinherit"),
+            ("highlighted", "fg:yellow noinherit"),
+            ("pointer", "fg:yellow noinherit"),
+        ]),
+    ).ask()
 
     if config_mode is None:
         console.print("\n[red]No configuration mode selected. Exiting...[/red]")
@@ -568,7 +589,7 @@ def get_user_selections(
         shallow_thinker = DEFAULT_CONFIG.get("quick_think_llm", "gpt-5.4-mini")
         deep_thinker = DEFAULT_CONFIG.get("deep_think_llm", "gpt-5.4")
         backend_url = DEFAULT_CONFIG.get("backend_url")
-        
+
         # Default backend URLs for regions if not set
         if not backend_url:
             if provider == "openai":
@@ -593,20 +614,21 @@ def get_user_selections(
                 backend_url = "https://api.minimaxi.com/v1"
             elif provider == "openrouter":
                 backend_url = "https://openrouter.ai/api/v1"
-        
+
         # Default thinking modes
         thinking_level = DEFAULT_CONFIG.get("google_thinking_level")
         reasoning_effort = DEFAULT_CONFIG.get("openai_reasoning_effort")
         anthropic_effort = DEFAULT_CONFIG.get("anthropic_effort")
-        
+
         # Filter analysts for asset type
         all_analysts = [AnalystType.MARKET, AnalystType.SOCIAL, AnalystType.NEWS, AnalystType.FUNDAMENTALS]
         selected_analysts = filter_analysts_for_asset_type(all_analysts, asset_type)
-        
+
         return {
             "ticker": selected_ticker,
             "asset_type": asset_type.value,
             "analysis_date": analysis_date,
+            "config_mode": "env",
             "analysts": selected_analysts,
             "research_depth": DEFAULT_CONFIG.get("max_debate_rounds", 1),
             "llm_provider": provider,
@@ -719,6 +741,7 @@ def get_user_selections(
         "ticker": selected_ticker,
         "asset_type": asset_type.value,
         "analysis_date": analysis_date,
+        "config_mode": "custom",
         "analysts": selected_analysts,
         "research_depth": selected_research_depth,
         "llm_provider": selected_llm_provider.lower(),
@@ -1364,6 +1387,30 @@ def run_analysis(
         display_choice = typer.prompt("\nDisplay full report on screen?", default="Y").strip().upper()
         if display_choice in ("Y", "YES", ""):
             display_complete_report(final_state)
+
+    # If user did custom re-configure, offer to save settings as new defaults
+    if selections.get("config_mode") == "custom":
+        console.print()
+        save_env_choice = typer.prompt(
+            "Save this configuration as new defaults to .env?",
+            default="N"
+        ).strip().upper()
+        if save_env_choice in ("Y", "YES"):
+            updates = {
+                "TRADINGAGENTS_LLM_PROVIDER": selections["llm_provider"],
+                "TRADINGAGENTS_DEEP_THINK_LLM": selections["deep_thinker"],
+                "TRADINGAGENTS_QUICK_THINK_LLM": selections["shallow_thinker"],
+                "TRADINGAGENTS_OUTPUT_LANGUAGE": selections.get("output_language", "English"),
+                "TRADINGAGENTS_MAX_DEBATE_ROUNDS": str(selections["research_depth"]),
+                "TRADINGAGENTS_MAX_RISK_ROUNDS": str(selections["research_depth"]),
+            }
+            if selections.get("backend_url"):
+                updates["TRADINGAGENTS_LLM_BACKEND_URL"] = selections["backend_url"]
+            try:
+                save_to_dotenv(updates)
+                console.print("[green]✓ Configuration saved to .env[/green]")
+            except Exception as e:
+                console.print(f"[red]Failed to save to .env: {e}[/red]")
 
 
 @app.callback()
