@@ -1103,9 +1103,17 @@ def run_analysis(
     # If user did custom re-configure, ask to save settings now (before analysis starts)
     if selections.get("config_mode") == "custom":
         console.print()
-        save_confirmed = questionary.confirm(
+        save_confirmed = questionary.select(
             "Save this configuration as new defaults to .env?",
-            default=False,
+            choices=[
+                questionary.Choice("No (one-time only)", False),
+                questionary.Choice("Yes (update .env)", True),
+            ],
+            style=questionary.Style([
+                ("selected", "fg:yellow noinherit"),
+                ("highlighted", "fg:yellow noinherit"),
+                ("pointer", "fg:yellow noinherit"),
+            ]),
         ).ask()
         if save_confirmed:
             updates = {
