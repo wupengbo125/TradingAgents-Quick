@@ -463,27 +463,49 @@ def update_display(layout, spinner_text=None, stats_handler=None, start_time=Non
 
 
 def save_to_dotenv(updates: dict) -> None:
-    """Write key=value pairs to the project .env file.
-    Existing keys are overwritten in-place; new keys are appended.
-    Comments and other lines are preserved.
+    """Rewrite the project .env file from scratch with the given config.
+
+    Only the current provider's API key and the TRADINGAGENTS_* settings
+    are written. Old provider keys and stale settings are discarded so
+    the file stays clean after every save.
     """
+    from tradingagents.llm_clients.api_key_env import PROVIDER_API_KEY_ENV
+
     env_path = Path(__file__).parent.parent / ".env"
-    lines = env_path.read_text(encoding="utf-8").splitlines() if env_path.exists() else []
-    updated_keys: set = set()
-    new_lines = []
-    for line in lines:
-        stripped = line.strip()
-        if stripped and not stripped.startswith("#") and "=" in stripped:
-            key = stripped.split("=", 1)[0].strip()
-            if key in updates:
-                new_lines.append(f"{key}={updates[key]}")
-                updated_keys.add(key)
-                continue
-        new_lines.append(line)
+
+    # ---- resolve current provider's API key from the live environment ----
+    provider = updates.get("TRADINGAGENTS_LLM_PROVIDER", "openai")
+    api_key_env = PROVIDER_API_KEY_ENV.get(provider)
+    api_key_val = os.environ.get(api_key_env, "") if api_key_env else ""
+
+    # ---- build a fresh .env from scratch ----
+    lines = [
+        "# =========================================================================",
+        "# TradingAgents Quick版 环境变量配置文件 (.env)",
+        "# =========================================================================",
+        "",
+    ]
+
+    # Section 1: provider API key
+    lines += [
+        "# 1. 大模型接口 API Key",
+        "# -------------------------------------------------------------------------",
+    ]
+    if api_key_env and api_key_val:
+        lines.append(f"{api_key_env}={api_key_val}")
+    elif api_key_env:
+        lines.append(f"# {api_key_env}=(未设置，请填写)")
+    lines.append("")
+
+    # Section 2: TRADINGAGENTS_* settings
+    lines += [
+        "# 2. 系统默认大模型配置覆盖",
+        "# -------------------------------------------------------------------------",
+    ]
     for key, val in updates.items():
-        if key not in updated_keys:
-            new_lines.append(f"{key}={val}")
-    env_path.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        lines.append(f"{key}={val}")
+
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def get_user_selections(
@@ -1124,7 +1146,7 @@ def run_analysis(
                 "TRADINGAGENTS_MAX_DEBATE_ROUNDS": str(selections["research_depth"]),
                 "TRADINGAGENTS_MAX_RISK_ROUNDS": str(selections["research_depth"]),
             }
-            if selections.get("backend_url"):
+            if selections["llm_provider"] == "custom" and selections.get("backend_url"):
                 updates["TRADINGAGENTS_LLM_BACKEND_URL"] = selections["backend_url"]
             try:
                 save_to_dotenv(updates)

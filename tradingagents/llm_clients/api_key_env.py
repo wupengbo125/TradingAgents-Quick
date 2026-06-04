@@ -29,7 +29,9 @@ PROVIDER_API_KEY_ENV: dict[str, Optional[str]] = {
     "glm-cn":     "ZHIPU_CN_API_KEY",
     "minimax":    "MINIMAX_API_KEY",
     "minimax-cn": "MINIMAX_CN_API_KEY",
+    "xiaomi":     "XIAOMI_API_KEY",
     "openrouter": "OPENROUTER_API_KEY",
+    "custom":     "AI_API_KEY",
     # Local runtimes do not authenticate.
     "ollama":     None,
 }

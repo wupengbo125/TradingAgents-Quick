@@ -106,6 +106,10 @@ _BY_ID: dict[str, ModelCapabilities] = {
     "MiniMax-M2.1": _MINIMAX_THINKING,
     "MiniMax-M2.1-highspeed": _MINIMAX_THINKING,
     "MiniMax-M2": _MINIMAX_THINKING,
+    # Xiaomi MiMo reasoning models — same tool_choice restriction as
+    # other reasoning models (accept tools array, reject tool_choice dict).
+    "mimo-v2.5": _DEEPSEEK_THINKING,
+    "mimo-v2.5-pro": _DEEPSEEK_THINKING,
 }
 
 # Forward-compat patterns. New ``deepseek-v5-*`` / ``deepseek-reasoner-*``
@@ -114,6 +118,7 @@ _BY_PATTERN: list[tuple[re.Pattern[str], ModelCapabilities]] = [
     (re.compile(r"^deepseek-v\d"), _DEEPSEEK_THINKING),
     (re.compile(r"^deepseek-reasoner"), _DEEPSEEK_THINKING),
     (re.compile(r"^MiniMax-M\d"), _MINIMAX_THINKING),
+    (re.compile(r"^mimo-v\d"), _DEEPSEEK_THINKING),
 ]
 
 

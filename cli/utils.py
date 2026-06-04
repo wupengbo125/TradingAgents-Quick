@@ -224,6 +224,16 @@ def _select_model(provider: str, mode: str) -> str:
             validate=lambda x: len(x.strip()) > 0 or "Please enter a deployment name.",
         ).ask().strip()
 
+    if provider.lower() == "custom":
+        result = questionary.text(
+            f"Enter model ID for {mode}-thinking (e.g. mimo-v2.5-pro):",
+            validate=lambda x: len(x.strip()) > 0 or "Please enter a model ID.",
+        ).ask()
+        if not result:
+            console.print(f"\n[red]No model ID entered. Exiting...[/red]")
+            exit(1)
+        return result.strip()
+
     choice = questionary.select(
         f"Select Your [{mode.title()}-Thinking LLM Engine]:",
         choices=[
@@ -275,9 +285,11 @@ def select_llm_provider() -> tuple[str, str | None]:
         ("Qwen", "qwen", "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"),
         ("GLM", "glm", "https://open.bigmodel.cn/api/paas/v4/"),
         ("MiniMax", "minimax", "https://api.minimax.io/v1"),
+        ("Xiaomi MiMo", "xiaomi", "https://token-plan-cn.xiaomimimo.com/v1"),
         ("OpenRouter", "openrouter", "https://openrouter.ai/api/v1"),
         ("Azure OpenAI", "azure", None),
         ("Ollama", "ollama", ollama_url),
+        ("Custom (OpenAI-compatible, uses AI_API / AI_API_KEY)", "custom", None),
     ]
 
     choice = questionary.select(
@@ -491,7 +503,18 @@ def ensure_api_key(provider: str) -> Optional[str]:
 
     existing = os.environ.get(env_var)
     if existing:
-        return existing
+        masked = existing if len(existing) <= 8 else f"{existing[:4]}...{existing[-4:]}"
+        use_existing = questionary.confirm(
+            f"Use existing {env_var} ({masked})?",
+            default=True,
+            style=questionary.Style([
+                ("selected", "fg:yellow noinherit"),
+                ("highlighted", "fg:yellow noinherit"),
+                ("pointer", "fg:yellow noinherit"),
+            ]),
+        ).ask()
+        if use_existing:
+            return existing
 
     console.print(
         f"\n[yellow]{env_var} is not set in your environment.[/yellow]"
